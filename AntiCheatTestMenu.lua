@@ -5,22 +5,22 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
---// Menu Configurations & States
+--// Menu Core Setup
 local Menu = {
     Visible = true,
-    CurrentTab = "Aimbot", -- Default Tab
-    Position = Vector2.new(100, 100),
-    Size = Vector2.new(500, 350),
+    CurrentTab = "Aimbot",
+    Position = Vector2.new(200, 200),
+    Size = Vector2.new(480, 360),
     Dragging = false,
-    DragStart = Vector2.new(0,0),
-    Drawings = {}
+    DragOffset = Vector2.new(0, 0),
+    UIObjects = {}
 }
 
---// Feature Settings (Modify defaults here)
+--// Feature Settings Matrix
 local Settings = {
     Aimbot = {
         Enabled = false,
-        TargetPart = "Head", -- "Head" or "HumanoidRootPart" (Body)
+        TargetPart = "Head", -- "Head" or "HumanoidRootPart"
         ShowFOV = false,
         FOVRadius = 100
     },
@@ -35,302 +35,186 @@ local Settings = {
         NamePos = "Top", -- "Top", "Bottom"
         Distance = false,
         DistancePos = "Bottom" -- "Top", "Bottom"
-    }
+    },
+    Settings = {}
 }
 
---// Helper Function to Create Drawing Objects
-local function createDrawing(type, properties)
-    local d = Drawing.new(type)
-    for prop, val in pairs(properties) do
-        d[prop] = val
+--// Persistent Drawing Garbage Collector
+local function ClearUIObjects()
+    for _, obj in pairs(Menu.UIObjects) do
+        pcall(function() obj:Remove() end)
     end
-    table.insert(Menu.Drawings, d)
-    return d
+    Menu.UIObjects = {}
 end
 
---// FOV Circle Setup
+--// Object Factory
+local function Draw(type, properties)
+    local obj = Drawing.new(type)
+    for prop, val in pairs(properties) do
+        obj[prop] = val
+    end
+    table.insert(Menu.UIObjects, obj)
+    return obj
+end
+
+--// Base FOV Ring
 local FOVCircle = Drawing.new("Circle")
-FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+FOVCircle.Color = Color3.fromRGB(0, 180, 255)
 FOVCircle.Thickness = 1
 FOVCircle.NumSides = 60
 FOVCircle.Filled = false
+FOVCircle.Visible = false
 
---// --- GUI Rendering System ---
-local function RenderGUI()
-    -- Clear previous frames frames to prevent ghosting
-    for _, d in pairs(Menu.Drawings) do d:Remove() end
-    Menu.Drawings = {}
+--// Interactive Coordinate Collisions Hook
+local ClickZones = {}
+local function AddZone(pos, size, callback)
+    table.insert(ClickZones, {X1 = pos.X, Y1 = pos.Y, X2 = pos.X + size.X, Y2 = pos.Y + size.Y, Action = callback})
+end
 
-    if not Menu.Visible then 
+--// Main Render Function
+local function CompileGUI()
+    ClearUIObjects()
+    ClickZones = {}
+
+    if not Menu.Visible then
         FOVCircle.Visible = false
-        return 
+        return
     end
 
-    -- Update FOV Circle
-    FOVCircle.Visible = Settings.Aimbot.ShowFOV and Settings.Aimbot.Enabled
-    FOVCircle.Position = UserInputService:GetMouseLocation()
-    FOVCircle.Radius = Settings.Aimbot.FOVRadius
+    -- Dynamic FOV Update
+    if Settings.Aimbot.Enabled and Settings.Aimbot.ShowFOV then
+        FOVCircle.Position = UserInputService:GetMouseLocation()
+        FOVCircle.Radius = Settings.Aimbot.FOVRadius
+        FOVCircle.Visible = true
+    else
+        FOVCircle.Visible = false
+    end
 
-    -- Main Background Frame
-    local MainFrame = createDrawing("Square", {
-        Position = Menu.Position,
-        Size = Menu.Size,
-        Color = Color3.fromRGB(25, 25, 25),
-        Filled = true,
-        Thickness = 0,
-        Visible = true
-    })
-
-    -- Title Bar
-    local TitleBar = createDrawing("Square", {
-        Position = Menu.Position,
-        Size = Vector2.new(Menu.Size.X, 30),
-        Color = Color3.fromRGB(35, 35, 35),
-        Filled = true,
-        Thickness = 0,
-        Visible = true
-    })
-
-    local TitleText = createDrawing("Text", {
-        Text = "Anticheat Test Environment Menu",
-        Position = Menu.Position + Vector2.new(10, 6),
-        Size = 16,
-        Color = Color3.fromRGB(255, 255, 255),
-        Font = 2,
-        Visible = true
-    })
-
-    -- Close Button [X]
-    local CloseBtn = createDrawing("Text", {
-        Text = "X",
-        Position = Menu.Position + Vector2.new(Menu.Size.X - 25, 6),
-        Size = 16,
-        Color = Color3.fromRGB(200, 50, 50),
-        Font = 2,
-        Visible = true
-    })
+    -- Background Core Frame
+    Draw("Square", {Position = Menu.Position, Size = Menu.Size, Color = Color3.fromRGB(20, 20, 20), Filled = true, Thickness = 0, Visible = true})
+    Draw("Square", {Position = Menu.Position, Size = Vector2.new(Menu.Size.X, 35), Color = Color3.fromRGB(30, 30, 30), Filled = true, Thickness = 0, Visible = true})
+    Draw("Text", {Text = "Anticheat Test Environment Matrix", Position = Menu.Position + Vector2.new(15, 10), Size = 16, Color = Color3.fromRGB(255, 255, 255), Font = 2, Visible = true})
 
     -- Minimize Button [-]
-    local MinimizeBtn = createDrawing("Text", {
-        Text = "-",
-        Position = Menu.Position + Vector2.new(Menu.Size.X - 45, 4),
-        Size = 20,
-        Color = Color3.fromRGB(200, 200, 200),
-        Font = 2,
-        Visible = true
-    })
+    local MinPos = Menu.Position + Vector2.new(Menu.Size.X - 55, 5)
+    Draw("Square", {Position = MinPos, Size = Vector2.new(20, 20), Color = Color3.fromRGB(45, 45, 45), Filled = true, Visible = true})
+    Draw("Text", {Text = "-", Position = MinPos + Vector2.new(6, 0), Size = 18, Color = Color3.fromRGB(255, 255, 255), Visible = true})
+    AddZone(MinPos, Vector2.new(20, 20), function() Menu.Visible = false end)
 
-    -- Sidebar (Tabs Area)
-    local Sidebar = createDrawing("Square", {
-        Position = Menu.Position + Vector2.new(0, 30),
-        Size = Vector2.new(120, Menu.Size.Y - 30),
-        Color = Color3.fromRGB(30, 30, 30),
-        Filled = true,
-        Thickness = 0,
-        Visible = true
-    })
+    -- Close Button [X]
+    local ClosePos = Menu.Position + Vector2.new(Menu.Size.X - 30, 5)
+    Draw("Square", {Position = ClosePos, Size = Vector2.new(20, 20), Color = Color3.fromRGB(150, 40, 40), Filled = true, Visible = true})
+    Draw("Text", {Text = "X", Position = ClosePos + Vector2.new(5, 2), Size = 14, Color = Color3.fromRGB(255, 255, 255), Visible = true})
+    AddZone(ClosePos, Vector2.new(20, 20), function()
+        ClearUIObjects()
+        FOVCircle:Remove()
+        Menu.Visible = false
+        script:Destroy()
+    end)
 
-    -- Tab Rendering Function
-    local function DrawTabButton(name, yOffset)
-        local isCurrent = (Menu.CurrentTab == name)
-        local TabBtn = createDrawing("Square", {
-            Position = Menu.Position + Vector2.new(0, 30 + yOffset),
-            Size = Vector2.new(120, 35),
-            Color = isCurrent and Color3.fromRGB(45, 45, 45) or Color3.fromRGB(30, 30, 30),
-            Filled = true,
-            Thickness = 0,
-            Visible = true
-        })
-        local TabTxt = createDrawing("Text", {
-            Text = name,
-            Position = TabBtn.Position + Vector2.new(15, 10),
-            Size = 14,
-            Color = isCurrent and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(150, 150, 150),
-            Font = 2,
-            Visible = true
-        })
+    -- Sidebar Base
+    Draw("Square", {Position = Menu.Position + Vector2.new(0, 35), Size = Vector2.new(130, Menu.Size.Y - 35), Color = Color3.fromRGB(25, 25, 25), Filled = true, Thickness = 0, Visible = true})
+
+    -- Sidebar Tabs Setup
+    local Tabs = {"Aimbot", "Visuals", "Settings"}
+    for idx, tabName in ipairs(Tabs) do
+        local tabY = Menu.Position.Y + 35 + ((idx - 1) * 40)
+        local isSelected = Menu.CurrentTab == tabName
+        
+        local TabBtn = Draw("Square", {Position = Vector2.new(Menu.Position.X, tabY), Size = Vector2.new(130, 40), Color = isSelected and Color3.fromRGB(35, 35, 35) or Color3.fromRGB(25, 25, 25), Filled = true, Thickness = 0, Visible = true})
+        Draw("Text", {Text = tabName, Position = Vector2.new(Menu.Position.X + 20, tabY + 12), Size = 14, Color = isSelected and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(160, 160, 160), Font = 2, Visible = true})
+        
+        AddZone(Vector2.new(Menu.Position.X, tabY), Vector2.new(130, 40), function()
+            Menu.CurrentTab = tabName
+            CompileGUI()
+        end)
     end
 
-    DrawTabButton("Aimbot", 0)
-    DrawTabButton("Visuals", 35)
-    DrawTabButton("Settings", 70)
+    -- Dynamic Content Offset Configuration
+    local contentX = Menu.Position.X + 150
+    local contentY = Menu.Position.Y + 55
 
-    -- Content Elements Render Loop Helper
-    local contentY = 45
-    local function AddToggle(label, state, callback)
-        local ToggleBox = createDrawing("Square", {
-            Position = Menu.Position + Vector2.new(140, contentY),
-            Size = Vector2.new(15, 15),
-            Color = state and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(60, 60, 60),
-            Filled = true,
-            Visible = true
-        })
-        createDrawing("Text", {
-            Text = label,
-            Position = Menu.Position + Vector2.new(165, contentY - 1),
-            Size = 14,
-            Color = Color3.fromRGB(220, 220, 220),
-            Visible = true
-        })
-        contentY = contentY + 25
+    local function ToggleElement(text, state, callback)
+        local BoxPos = Vector2.new(contentX, contentY)
+        Draw("Square", {Position = BoxPos, Size = Vector2.new(16, 16), Color = state and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(50, 50, 50), Filled = true, Thickness = 0, Visible = true})
+        Draw("Text", {Text = text, Position = BoxPos + Vector2.new(26, 0), Size = 14, Color = Color3.fromRGB(220, 220, 220), Visible = true})
+        AddZone(BoxPos, Vector2.new(200, 16), callback)
+        contentY = contentY + 28
     end
 
-    local function AddSlider(label, val, max, callback)
-        createDrawing("Text", {
-            Text = label .. ": " .. tostring(val),
-            Position = Menu.Position + Vector2.new(140, contentY),
-            Size = 14,
-            Color = Color3.fromRGB(220, 220, 220),
-            Visible = true
-        })
-        local SliderBg = createDrawing("Square", {
-            Position = Menu.Position + Vector2.new(140, contentY + 18),
-            Size = Vector2.new(200, 6),
-            Color = Color3.fromRGB(50, 50, 50),
-            Filled = true,
-            Visible = true
-        })
-        local SliderFill = createDrawing("Square", {
-            Position = SliderBg.Position,
-            Size = Vector2.new((val / max) * 200, 6),
-            Color = Color3.fromRGB(0, 180, 255),
-            Filled = true,
-            Visible = true
-        })
-        contentY = contentY + 35
+    local function SelectionElement(label, current, callback)
+        local SelPos = Vector2.new(contentX, contentY)
+        Draw("Square", {Position = SelPos, Size = Vector2.new(180, 22), Color = Color3.fromRGB(40, 40, 40), Filled = true, Visible = true})
+        Draw("Text", {Text = label .. ": " .. current, Position = SelPos + Vector2.new(8, 4), Size = 13, Color = Color3.fromRGB(255, 255, 255), Visible = true})
+        AddZone(SelPos, Vector2.new(180, 22), callback)
+        contentY = contentY + 32
     end
 
-    local function AddSelector(label, currentMode, callback)
-        createDrawing("Text", {
-            Text = label .. ": [" .. currentMode .. "]",
-            Position = Menu.Position + Vector2.new(140, contentY),
-            Size = 14,
-            Color = Color3.fromRGB(0, 180, 255),
-            Visible = true
-        })
-        contentY = contentY + 25
+    local function SliderElement(label, val, max, callback)
+        Draw("Text", {Text = label .. ": " .. tostring(val), Position = Vector2.new(contentX, contentY), Size = 13, Color = Color3.fromRGB(220, 220, 220), Visible = true})
+        local SliderBg = Vector2.new(contentX, contentY + 16)
+        Draw("Square", {Position = SliderBg, Size = Vector2.new(200, 8), Color = Color3.fromRGB(45, 45, 45), Filled = true, Visible = true})
+        Draw("Square", {Position = SliderBg, Size = Vector2.new((val / max) * 200, 8), Color = Color3.fromRGB(0, 180, 255), Filled = true, Visible = true})
+        AddZone(SliderBg, Vector2.new(200, 8), callback)
+        contentY = contentY + 38
     end
 
-    -- Render Interactive Elements Based on Selected Tab
+    -- Tab Elements Controller
     if Menu.CurrentTab == "Aimbot" then
-        AddToggle("Enable Aimbot", Settings.Aimbot.Enabled)
-        AddSelector("Target Part Mode", Settings.Aimbot.TargetPart)
-        AddToggle("Show FOV Circle", Settings.Aimbot.ShowFOV)
-        AddSlider("FOV Size", Settings.Aimbot.FOVRadius, 500)
-        
+        ToggleElement("Enable Engine Aimbot", Settings.Aimbot.Enabled, function() Settings.Aimbot.Enabled = not Settings.Aimbot.Enabled end)
+        SelectionElement("Target Tracking Bone", Settings.Aimbot.TargetPart, function() Settings.Aimbot.TargetPart = (Settings.Aimbot.TargetPart == "Head") and "HumanoidRootPart" or "Head" end)
+        ToggleElement("Show Area FOV Circle", Settings.Aimbot.ShowFOV, function() Settings.Aimbot.ShowFOV = not Settings.Aimbot.ShowFOV end)
+        SliderElement("Aim FOV Limit", Settings.Aimbot.FOVRadius, 400, function()
+            Settings.Aimbot.FOVRadius = Settings.Aimbot.FOVRadius + 50
+            if Settings.Aimbot.FOVRadius > 400 then Settings.Aimbot.FOVRadius = 50 end
+        end)
     elseif Menu.CurrentTab == "Visuals" then
-        AddToggle("Enable Master Visuals", Settings.Visuals.Enabled)
-        AddToggle("Box ESP", Settings.Visuals.Box)
-        AddToggle("Snapline ESP", Settings.Visuals.Line)
-        AddSelector("Snapline Mode", Settings.Visuals.LinePos)
-        AddToggle("Health Bar", Settings.Visuals.HealthBar)
-        AddSelector("Health Bar Mode", Settings.Visuals.HealthBarPos)
-        AddToggle("Player Name ESP", Settings.Visuals.Name)
-        AddSelector("Name Placement", Settings.Visuals.NamePos)
-        AddToggle("Distance Track", Settings.Visuals.Distance)
-        AddSelector("Distance Placement", Settings.Visuals.DistancePos)
-        
+        ToggleElement("Master ESP Toggle", Settings.Visuals.Enabled, function() Settings.Visuals.Enabled = not Settings.Visuals.Enabled end)
+        ToggleElement("2D Box ESP Tracking", Settings.Visuals.Box, function() Settings.Visuals.Box = not Settings.Visuals.Box end)
+        ToggleElement("Tracer Snaplines", Settings.Visuals.Line, function() Settings.Visuals.Line = not Settings.Visuals.Line end)
+        SelectionElement("Tracer Origin Point", Settings.Visuals.LinePos, function()
+            local m = {"Bottom", "Top", "Side"}
+            Settings.Visuals.LinePos = m[(table.find(m, Settings.Visuals.LinePos) % #m) + 1]
+        end)
+        ToggleElement("Structural Health Bar", Settings.Visuals.HealthBar, function() Settings.Visuals.HealthBar = not Settings.Visuals.HealthBar end)
+        SelectionElement("Health Bar Alignment", Settings.Visuals.HealthBarPos, function()
+            local m = {"Left", "Right", "Top", "Bottom"}
+            Settings.Visuals.HealthBarPos = m[(table.find(m, Settings.Visuals.HealthBarPos) % #m) + 1]
+        end)
+        ToggleElement("Display Target Name", Settings.Visuals.Name, function() Settings.Visuals.Name = not Settings.Visuals.Name end)
+        SelectionElement("Name Text Array Positioning", Settings.Visuals.NamePos, function() Settings.Visuals.NamePos = (Settings.Visuals.NamePos == "Top") and "Bottom" or "Top" end)
+        ToggleElement("Display Target Distance", Settings.Visuals.Distance, function() Settings.Visuals.Distance = not Settings.Visuals.Distance end)
+        SelectionElement("Distance Text Layering", Settings.Visuals.DistancePos, function() Settings.Visuals.DistancePos = (Settings.Visuals.DistancePos == "Top") and "Bottom" or "Top" end)
     elseif Menu.CurrentTab == "Settings" then
-        createDrawing("Text", {
-            Text = "Press [INSERT] to completely hide GUI.",
-            Position = Menu.Position + Vector2.new(140, contentY),
-            Size = 14,
-            Color = Color3.fromRGB(150, 150, 150),
-            Visible = true
-        })
-        contentY = contentY + 25
-        createDrawing("Text", {
-            Text = "Click structural texts / toggles to flip values.",
-            Position = Menu.Position + Vector2.new(140, contentY),
-            Size = 14,
-            Color = Color3.fromRGB(150, 150, 150),
-            Visible = true
-        })
+        Draw("Text", {Text = "System Testing Menu Hotkeys:", Position = Vector2.new(contentX, contentY), Size = 14, Color = Color3.fromRGB(200, 200, 200), Visible = true})
+        contentY = contentY + 20
+        Draw("Text", {Text = "- Press [INSERT] to safely open/hide UI", Position = Vector2.new(contentX, contentY), Size = 13, Color = Color3.fromRGB(150, 150, 150), Visible = true})
+        contentY = contentY + 18
+        Draw("Text", {Text = "- Hold [Right-Click] to force target tracking lock", Position = Vector2.new(contentX, contentY), Size = 13, Color = Color3.fromRGB(150, 150, 150), Visible = true})
     end
 end
 
---// --- Click and Drag Functionality Interceptor ---
-UserInputService.InputBegan:Connect(function(input, processed)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 and Menu.Visible then
-        local mousePos = UserInputService:GetMouseLocation()
+--// UI Interactive Drag & Click Engine Input Connectors
+UserInputService.InputBegan:Connect(function(input)
+    if not Menu.Visible then return end
+    
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local mouse = UserInputService:GetMouseLocation()
         
-        -- Window Closing Logic
-        if mousePos.X >= Menu.Position.X + Menu.Size.X - 30 and mousePos.X <= Menu.Position.X + Menu.Size.X and mousePos.Y >= Menu.Position.Y and mousePos.Y <= Menu.Position.Y + 30 then
-            Menu.Visible = false
-            FOVCircle:Remove()
-            for _, d in pairs(Menu.Drawings) do d:Remove() end
-            script:Destroy() -- Terminates environment hook safely
-            return
-        end
-
-        -- Minimize Window Logic
-        if mousePos.X >= Menu.Position.X + Menu.Size.X - 50 and mousePos.X <= Menu.Position.X + Menu.Size.X - 30 and mousePos.Y >= Menu.Position.Y and mousePos.Y <= Menu.Position.Y + 30 then
-            Menu.Visible = false
-            return
-        end
-
-        -- Header Dragger Capture Hook
-        if mousePos.X >= Menu.Position.X and mousePos.X <= Menu.Position.X + Menu.Size.X and mousePos.Y >= Menu.Position.Y and mousePos.Y <= Menu.Position.Y + 30 then
+        -- Header Drag Detection Area Bounds Check
+        if mouse.X >= Menu.Position.X and mouse.X <= Menu.Position.X + Menu.Size.X and mouse.Y >= Menu.Position.Y and mouse.Y <= Menu.Position.Y + 35 then
             Menu.Dragging = true
-            Menu.DragStart = mousePos - Menu.Position
+            Menu.DragOffset = mouse - Menu.Position
             return
         end
 
-        -- Tab switching clicks
-        if mousePos.X >= Menu.Position.X and mousePos.X <= Menu.Position.X + 120 then
-            if mousePos.Y >= Menu.Position.Y + 30 and mousePos.Y <= Menu.Position.Y + 65 then
-                Menu.CurrentTab = "Aimbot"
-            elseif mousePos.Y >= Menu.Position.Y + 65 and mousePos.Y <= Menu.Position.Y + 100 then
-                Menu.CurrentTab = "Visuals"
-            elseif mousePos.Y >= Menu.Position.Y + 100 and mousePos.Y <= Menu.Position.Y + 135 then
-                Menu.CurrentTab = "Settings"
+        -- Button Interaction Zone Checks
+        for _, zone in pairs(ClickZones) do
+            if mouse.X >= zone.X1 and mouse.X <= zone.X2 and mouse.Y >= zone.Y1 and mouse.Y <= zone.Y2 then
+                zone.Action()
+                CompileGUI()
+                break
             end
-            RenderGUI()
-            return
-        end
-
-        -- Menu Control Panel State Toggles Interaction Map
-        if mousePos.X >= Menu.Position.X + 140 and mousePos.X <= Menu.Position.X + Menu.Size.X then
-            if Menu.CurrentTab == "Aimbot" then
-                if mousePos.Y >= Menu.Position.Y + 45 and mousePos.Y <= Menu.Position.Y + 65 then
-                    Settings.Aimbot.Enabled = not Settings.Aimbot.Enabled
-                elseif mousePos.Y >= Menu.Position.Y + 70 and mousePos.Y <= Menu.Position.Y + 90 then
-                    Settings.Aimbot.TargetPart = (Settings.Aimbot.TargetPart == "Head") and "HumanoidRootPart" or "Head"
-                elseif mousePos.Y >= Menu.Position.Y + 95 and mousePos.Y <= Menu.Position.Y + 115 then
-                    Settings.Aimbot.ShowFOV = not Settings.Aimbot.ShowFOV
-                elseif mousePos.Y >= Menu.Position.Y + 120 and mousePos.Y <= Menu.Position.Y + 150 then
-                    -- Simple incremental slider click emulator
-                    Settings.Aimbot.FOVRadius = Settings.Aimbot.FOVRadius + 50
-                    if Settings.Aimbot.FOVRadius > 300 then Settings.Aimbot.FOVRadius = 50 end
-                end
-            elseif Menu.CurrentTab == "Visuals" then
-                if mousePos.Y >= Menu.Position.Y + 45 and mousePos.Y <= Menu.Position.Y + 65 then
-                    Settings.Visuals.Enabled = not Settings.Visuals.Enabled
-                elseif mousePos.Y >= Menu.Position.Y + 70 and mousePos.Y <= Menu.Position.Y + 90 then
-                    Settings.Visuals.Box = not Settings.Visuals.Box
-                elseif mousePos.Y >= Menu.Position.Y + 95 and mousePos.Y <= Menu.Position.Y + 115 then
-                    Settings.Visuals.Line = not Settings.Visuals.Line
-                elseif mousePos.Y >= Menu.Position.Y + 120 and mousePos.Y <= Menu.Position.Y + 140 then
-                    local modes = {"Bottom", "Top", "Side"}
-                    local idx = table.find(modes, Settings.Visuals.LinePos) or 1
-                    Settings.Visuals.LinePos = modes[(idx % #modes) + 1]
-                elseif mousePos.Y >= Menu.Position.Y + 145 and mousePos.Y <= Menu.Position.Y + 165 then
-                    Settings.Visuals.HealthBar = not Settings.Visuals.HealthBar
-                elseif mousePos.Y >= Menu.Position.Y + 170 and mousePos.Y <= Menu.Position.Y + 190 then
-                    local modes = {"Left", "Right", "Top", "Bottom"}
-                    local idx = table.find(modes, Settings.Visuals.HealthBarPos) or 1
-                    Settings.Visuals.HealthBarPos = modes[(idx % #modes) + 1]
-                elseif mousePos.Y >= Menu.Position.Y + 195 and mousePos.Y <= Menu.Position.Y + 215 then
-                    Settings.Visuals.Name = not Settings.Visuals.Name
-                elseif mousePos.Y >= Menu.Position.Y + 220 and mousePos.Y <= Menu.Position.Y + 240 then
-                    Settings.Visuals.NamePos = (Settings.Visuals.NamePos == "Top") and "Bottom" or "Top"
-                elseif mousePos.Y >= Menu.Position.Y + 245 and mousePos.Y <= Menu.Position.Y + 265 then
-                    Settings.Visuals.Distance = not Settings.Visuals.Distance
-                elseif mousePos.Y >= Menu.Position.Y + 270 and mousePos.Y <= Menu.Position.Y + 290 then
-                    Settings.Visuals.DistancePos = (Settings.Visuals.DistancePos == "Top") and "Bottom" or "Top"
-                end
-            end
-            RenderGUI()
         end
     end
 end)
@@ -341,178 +225,182 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
--- Window Un-Minimize Toggle Hook
+-- Frame Update Dragger Execution Pipeline
+RunService.RenderStepped:Connect(function()
+    if Menu.Dragging and Menu.Visible then
+        Menu.Position = UserInputService:GetMouseLocation() - Menu.DragOffset
+        CompileGUI()
+    end
+end)
+
+-- Global Visibility Toggle Key (Insert)
 UserInputService.InputBegan:Connect(function(input, processed)
     if not processed and input.KeyCode == Enum.KeyCode.Insert then
         Menu.Visible = not Menu.Visible
-        RenderGUI()
+        CompileGUI()
     end
 end)
 
-RunService.RenderStepped:Connect(function()
-    if Menu.Dragging and Menu.Visible then
-        Menu.Position = UserInputService:GetMouseLocation() - Menu.DragStart
-        RenderGUI()
-    end
-end)
-
---// Initial Render Setup Initialization
-RenderGUI()
+-- Initial Startup Compile Execution
+CompileGUI()
 
 
---// --- CORE MECHANICS: AIMBOT WITHOUT SCOPE ---
-local function GetClosestPlayerToMouse()
-    local target = nil
-    local maxDist = Settings.Aimbot.ShowFOV and Settings.Aimbot.FOVRadius or math.huge
-    local mousePos = UserInputService:GetMouseLocation()
+--// ==========================================
+--// CORE MECHANICS: MATHEMATICAL CALCULATIONS (AIMBOT)
+--// ==========================================
+local function GetClosestTargetToCrosshair()
+    local nearestTarget = nil
+    local shortestDist = Settings.Aimbot.ShowFOV and Settings.Aimbot.FOVRadius or math.huge
+    local mouseLoc = UserInputService:GetMouseLocation()
 
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
-            local part = player.Character:FindFirstChild(Settings.Aimbot.TargetPart)
-            if part then
-                local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            local targetBone = player.Character:FindFirstChild(Settings.Aimbot.TargetPart)
+            if targetBone then
+                local vector, onScreen = Camera:WorldToViewportPoint(targetBone.Position)
                 if onScreen then
-                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-                    if dist < maxDist then
-                        maxDist = dist
-                        target = part
+                    local screenDist = (Vector2.new(vector.X, vector.Y) - mouseLoc).Magnitude
+                    if screenDist < shortestDist then
+                        shortestDist = screenDist
+                        nearestTarget = targetBone
                     end
                 end
             end
         end
     end
-    return target
+    return nearestTarget
 end
 
 RunService.RenderStepped:Connect(function()
-    if Settings.Aimbot.Enabled then
-        local targetPart = GetClosestPlayerToMouse()
-        if targetPart and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then -- Right Click Locks on Target
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
+    if Settings.Aimbot.Enabled and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        local target = GetClosestTargetToCrosshair()
+        if target then
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
         end
     end
 end)
 
 
---// --- CORE MECHANICS: DRAWING API ESP SYSTEM ---
-local ActiveESPs = {}
+--// ==========================================
+--// CORE MECHANICS: ESP CACHE RENDERING PIPELINE
+--// ==========================================
+local ESPCache = {}
 
-local function CreateESPStorage(player)
-    if ActiveESPs[player] then return end
-    ActiveESPs[player] = {
-        Box = Drawing.new("Square"),
-        Line = Drawing.new("Line"),
-        Health = Drawing.new("Square"),
-        HealthBg = Drawing.new("Square"),
-        Name = Drawing.new("Text"),
-        Distance = Drawing.new("Text")
-    }
-end
-
-local function RemoveESPStorage(player)
-    if ActiveESPs[player] then
-        for _, drawObj in pairs(ActiveESPs[player]) do drawObj:Remove() end
-        ActiveESPs[player] = nil
+local function ClearPlayerESP(player)
+    if ESPCache[player] then
+        for _, drawObj in pairs(ESPCache[player]) do
+            pcall(function() drawObj:Remove() end)
+        end
+        ESPCache[player] = nil
     end
 end
 
-Players.PlayerRemoving:Connect(RemoveESPStorage)
+Players.PlayerRemoving:Connect(ClearPlayerESP)
 
 RunService.RenderStepped:Connect(function()
     if not Settings.Visuals.Enabled then
-        for p, _ in pairs(ActiveESPs) do RemoveESPStorage(p) end
+        for p, _ in pairs(ESPCache) do ClearPlayerESP(p) end
         return
     end
 
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
-            CreateESPStorage(player)
-            local container = ActiveESPs[player]
+            
+            if not ESPCache[player] then
+                ESPCache[player] = {
+                    Box = Drawing.new("Square"),
+                    Line = Drawing.new("Line"),
+                    HealthBarBg = Drawing.new("Square"),
+                    HealthBarFill = Drawing.new("Square"),
+                    NameText = Drawing.new("Text"),
+                    DistText = Drawing.new("Text")
+                }
+            end
+
+            local cache = ESPCache[player]
             local hrp = player.Character.HumanoidRootPart
-            local hum = player.Character.Humanoid
-            
+            local humanoid = player.Character.Humanoid
             local hrpPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-            
+
             if onScreen then
-                -- Calculate dynamic sizing metrics based on camera depth projection distance
-                local scaleFactor = 1 / (hrpPos.Z * math.tan(math.rad(Camera.FieldOfView / 2))) * 1000
-                local width, height = 4 * scaleFactor, 6 * scaleFactor
-                local x, y = hrpPos.X - width / 2, hrpPos.Y - height / 2
+                -- Depth Projection Scale Adjustments
+                local factor = 1 / (hrpPos.Z * math.tan(math.rad(Camera.FieldOfView / 2))) * 1000
+                local w, h = 4 * factor, 5.5 * factor
+                local x, y = hrpPos.X - w / 2, hrpPos.Y - h / 2
 
-                -- Box ESP configuration
-                container.Box.Visible = Settings.Visuals.Box
-                container.Box.Size = Vector2.new(width, height)
-                container.Box.Position = Vector2.new(x, y)
-                container.Box.Color = Color3.fromRGB(255, 0, 0)
-                container.Box.Thickness = 1
-                container.Box.Filled = false
+                -- Box Configurations
+                cache.Box.Visible = Settings.Visuals.Box
+                cache.Box.Size = Vector2.new(w, h)
+                cache.Box.Position = Vector2.new(x, y)
+                cache.Box.Color = Color3.fromRGB(255, 60, 60)
+                cache.Box.Thickness = 1
+                cache.Box.Filled = false
 
-                -- Snapline ESP configuration Matrix
-                container.Line.Visible = Settings.Visuals.Line
-                container.Line.To = Vector2.new(hrpPos.X, hrpPos.Y)
-                container.Line.Color = Color3.fromRGB(255, 255, 0)
-                container.Line.Thickness = 1
+                -- Snapline Matrix
+                cache.Line.Visible = Settings.Visuals.Line
+                cache.Line.To = Vector2.new(hrpPos.X, hrpPos.Y)
+                cache.Line.Color = Color3.fromRGB(255, 230, 100)
                 if Settings.Visuals.LinePos == "Bottom" then
-                    container.Line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                    cache.Line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
                 elseif Settings.Visuals.LinePos == "Top" then
-                    container.Line.From = Vector2.new(Camera.ViewportSize.X / 2, 0)
-                elseif Settings.Visuals.LinePos == "Side" then
-                    container.Line.From = Vector2.new(0, Camera.ViewportSize.Y / 2)
+                    cache.Line.From = Vector2.new(Camera.ViewportSize.X / 2, 0)
+                else
+                    cache.Line.From = Vector2.new(0, Camera.ViewportSize.Y / 2)
                 end
 
-                -- Healthbar Render Configuration Matrix
-                container.Health.Visible = Settings.Visuals.HealthBar
-                container.HealthBg.Visible = Settings.Visuals.HealthBar
-                local hpPct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                container.HealthBg.Color = Color3.fromRGB(50, 0, 0)
-                container.HealthBg.Filled = true
-                container.Health.Color = Color3.fromRGB(0, 255, 0):Lerp(Color3.fromRGB(255,0,0), 1 - hpPct)
-                container.Health.Filled = true
+                -- Health Matrix Calculations
+                cache.HealthBarBg.Visible = Settings.Visuals.HealthBar
+                cache.HealthBarFill.Visible = Settings.Visuals.HealthBar
+                local rawHp = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+                
+                cache.HealthBarBg.Color = Color3.fromRGB(40, 0, 0)
+                cache.HealthBarBg.Filled = true
+                cache.HealthBarFill.Color = Color3.fromRGB(255, 0, 0):Lerp(Color3.fromRGB(0, 255, 100), rawHp)
+                cache.HealthBarFill.Filled = true
 
                 if Settings.Visuals.HealthBarPos == "Left" then
-                    container.HealthBg.Position = Vector2.new(x - 6, y)
-                    container.HealthBg.Size = Vector2.new(4, height)
-                    container.Health.Position = Vector2.new(x - 6, y + (height * (1 - hpPct)))
-                    container.Health.Size = Vector2.new(4, height * hpPct)
+                    cache.HealthBarBg.Position = Vector2.new(x - 6, y)
+                    cache.HealthBarBg.Size = Vector2.new(3, h)
+                    cache.HealthBarFill.Position = Vector2.new(x - 6, y + (h * (1 - rawHp)))
+                    cache.HealthBarFill.Size = Vector2.new(3, h * rawHp)
                 elseif Settings.Visuals.HealthBarPos == "Right" then
-                    container.HealthBg.Position = Vector2.new(x + width + 2, y)
-                    container.HealthBg.Size = Vector2.new(4, height)
-                    container.Health.Position = Vector2.new(x + width + 2, y + (height * (1 - hpPct)))
-                    container.Health.Size = Vector2.new(4, height * hpPct)
+                    cache.HealthBarBg.Position = Vector2.new(x + w + 3, y)
+                    cache.HealthBarBg.Size = Vector2.new(3, h)
+                    cache.HealthBarFill.Position = Vector2.new(x + w + 3, y + (h * (1 - rawHp)))
+                    cache.HealthBarFill.Size = Vector2.new(3, h * rawHp)
                 elseif Settings.Visuals.HealthBarPos == "Top" then
-                    container.HealthBg.Position = Vector2.new(x, y - 6)
-                    container.HealthBg.Size = Vector2.new(width, 4)
-                    container.Health.Position = Vector2.new(x, y - 6)
-                    container.Health.Size = Vector2.new(width * hpPct, 4)
-                elseif Settings.Visuals.HealthBarPos == "Bottom" then
-                    container.HealthBg.Position = Vector2.new(x, y + height + 2)
-                    container.HealthBg.Size = Vector2.new(width, 4)
-                    container.Health.Position = Vector2.new(x, y + height + 2)
-                    container.Health.Size = Vector2.new(width * hpPct, 4)
+                    cache.HealthBarBg.Position = Vector2.new(x, y - 6)
+                    cache.HealthBarBg.Size = Vector2.new(w, 3)
+                    cache.HealthBarFill.Position = Vector2.new(x, y - 6)
+                    cache.HealthBarFill.Size = Vector2.new(w * rawHp, 3)
+                else
+                    cache.HealthBarBg.Position = Vector2.new(x, y + h + 3)
+                    cache.HealthBarBg.Size = Vector2.new(w, 3)
+                    cache.HealthBarFill.Position = Vector2.new(x, y + h + 3)
+                    cache.HealthBarFill.Size = Vector2.new(w * rawHp, 3)
                 end
 
-                -- Text Name Display Engine Matrix
-                container.Name.Visible = Settings.Visuals.Name
-                container.Name.Text = player.Name
-                container.Name.Size = 14
-                container.Name.Center = true
-                container.Name.Color = Color3.fromRGB(255, 255, 255)
-                container.Name.Position = (Settings.Visuals.NamePos == "Top") and Vector2.new(hrpPos.X, y - 20) or Vector2.new(hrpPos.X, y + height + 5)
+                -- Player Text Names Engine
+                cache.NameText.Visible = Settings.Visuals.Name
+                cache.NameText.Text = player.Name
+                cache.NameText.Size = 13
+                cache.NameText.Center = true
+                cache.NameText.Color = Color3.fromRGB(255, 255, 255)
+                cache.NameText.Position = (Settings.Visuals.NamePos == "Top") and Vector2.new(hrpPos.X, y - 18) or Vector2.new(hrpPos.X, y + h + 6)
 
-                -- Distance Calculation Tracking Matrix
-                container.Distance.Visible = Settings.Visuals.Distance
-                local actualDistance = math.floor((LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and (LocalPlayer.Character.HumanoidRootPart.Position - hrp.Position).Magnitude) or 0)
-                container.Distance.Text = tostring(actualDistance) .. " studs"
-                container.Distance.Size = 12
-                container.Distance.Center = true
-                container.Distance.Color = Color3.fromRGB(200, 200, 200)
-                container.Distance.Position = (Settings.Visuals.DistancePos == "Bottom") and Vector2.new(hrpPos.X, y + height + (Settings.Visuals.Name.Enabled and 20 or 5)) or Vector2.new(hrpPos.X, y - 35)
+                -- Real-time Range Vector Tracking 
+                cache.DistText.Visible = Settings.Visuals.Distance
+                local distance = math.floor((LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and (LocalPlayer.Character.HumanoidRootPart.Position - hrp.Position).Magnitude) or 0)
+                cache.DistText.Text = tostring(distance) .. " Studs"
+                cache.DistText.Size = 11
+                cache.DistText.Center = true
+                cache.DistText.Color = Color3.fromRGB(180, 180, 180)
+                cache.DistText.Position = (Settings.Visuals.DistancePos == "Bottom") and Vector2.new(hrpPos.X, y + h + (Settings.Visuals.Name.Enabled and 20 or 6)) or Vector2.new(hrpPos.X, y - 32)
             else
-                -- Off-screen characters safety clamp hidden state
-                for _, drawObj in pairs(container) do drawObj.Visible = false end
+                for _, obj in pairs(cache) do obj.Visible = false end
             end
         else
-            RemoveESPStorage(player)
+            ClearPlayerESP(player)
         end
     end
 end)
