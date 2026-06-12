@@ -1,5 +1,5 @@
--- MOBILE COMPLETE STRESS-TESTING SUITE (MODIFIED WITH METRIC RANGE LIMIT)
--- Features: Non-Scoped Instant Head Lock, Skeleton ESP, Metric Distance Tracking, Health Bars, Floating Menu
+-- MOBILE COMPLETE STRESS-TESTING SUITE (MODIFIED - CLEAN INTERFACE & STABLE LOCK)
+-- Features: Sticky Non-Scoped Instant Head Lock, Skeleton ESP, Metric Distance Tracking, Health Bars
 
 local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))()
 
@@ -19,18 +19,18 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
 
 local Options = {
     Aimbot = false, FOVCircle = false, FOVRadius = 150,
-    MaxAimRangeMeters = 100, -- Maximum lock-on distance in METERS
+    MaxAimRangeMeters = 100,
     EspMaster = false, EspLines = false, LinePos = "Bottom", EspBoxes = false, BoxStyle = "Full Box", EspNames = false, 
     EspHealth = false, EspDistance = false, EspSkeleton = false,
     Fly = false, FlySpeed = 50, VelocitySpeed = false, WalkSpeedValue = 16
 }
 
 local Cache = {}
-local STUDS_PER_METER = 28 -- Official/Standard Roblox Metric Conversion Factor
+local STUDS_PER_METER = 28
+local CurrentActiveTarget = nil -- Persistent target structure for sticky validation
 
 -- Center Crosshair Initialization
 local FOVCircleObj = Drawing.new("Circle")
@@ -55,50 +55,61 @@ local SkeletonBones = {
 -- ==========================================
 -- HIGH-PERFORMANCE TARGETING POOL
 -- ==========================================
+local function IsValidTarget(player)
+    if not player or player == LocalPlayer or not player.Character then return false end
+    local head = player.Character:FindFirstChild("Head")
+    local root = player.Character:FindFirstChild("HumanoidRootPart")
+    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+    
+    if not head or not root or not humanoid or humanoid.Health <= 0 then return false end
+    
+    local localCharacter = LocalPlayer.Character
+    if not localCharacter or not localCharacter:FindFirstChild("HumanoidRootPart") then return false end
+    
+    -- Range Tracking validation
+    local distanceInMeters = (root.Position - localCharacter.HumanoidRootPart.Position).Magnitude / STUDS_PER_METER
+    if distanceInMeters > Options.MaxAimRangeMeters then return false end
+    
+    return true
+end
+
 local function GetClosestPlayer()
+    -- Maintain target locked state if target remains active and valid to prevent unlocking anomalies
+    if CurrentActiveTarget and IsValidTarget(CurrentActiveTarget) then
+        local head = CurrentActiveTarget.Character.Head
+        local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
+        local ScreenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        local magnitude = (Vector2.new(pos.X, pos.Y) - ScreenCenter).Magnitude
+        
+        if not Options.FOVCircle or magnitude <= Options.FOVRadius then
+            return CurrentActiveTarget
+        end
+    end
+
     local Target = nil
     local ShortestDistance = math.huge
     local ScreenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    
-    local localCharacter = LocalPlayer.Character
-    if not localCharacter or not localCharacter:FindFirstChild("HumanoidRootPart") then
-        return nil
-    end
-    
-    local localRootPos = localCharacter.HumanoidRootPart.Position
 
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local head = player.Character:FindFirstChild("Head")
-            local root = player.Character:FindFirstChild("HumanoidRootPart")
-            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        if IsValidTarget(player) then
+            local head = player.Character.Head
+            local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
             
-            if head and root and humanoid and humanoid.Health > 0 then
-                -- Convert 3D Studs distance to Meters
-                local distanceInStuds = (root.Position - localRootPos).Magnitude
-                local distanceInMeters = distanceInStuds / STUDS_PER_METER
+            if onScreen then
+                local targetScreenPos = Vector2.new(pos.X, pos.Y)
+                local magnitude = (targetScreenPos - ScreenCenter).Magnitude
                 
-                -- Metric Range Validation Check
-                if distanceInMeters > Options.MaxAimRangeMeters then
-                    continue -- Skip player if they are too far away in meters
-                end
-                
-                local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
-                
-                if onScreen then
-                    local targetScreenPos = Vector2.new(pos.X, pos.Y)
-                    local magnitude = (targetScreenPos - ScreenCenter).Magnitude
-                    
-                    if magnitude < ShortestDistance then
-                        if not Options.FOVCircle or magnitude <= Options.FOVRadius then
-                            ShortestDistance = magnitude
-                            Target = player
-                        end
+                if magnitude < ShortestDistance then
+                    if not Options.FOVCircle or magnitude <= Options.FOVRadius then
+                        ShortestDistance = magnitude
+                        Target = player
                     end
                 end
             end
         end
     end
+    
+    CurrentActiveTarget = Target
     return Target
 end
 
@@ -117,120 +128,12 @@ end
 Players.PlayerRemoving:Connect(ClearPlayerCache)
 
 -- ==========================================
--- MOBILE FLOATING MENU TAB (DRAGGABLE)
--- ==========================================
-local MobileUI = Instance.new("ScreenGui")
-local MainFrame = Instance.new("Frame")
-local TabTitle = Instance.new("TextLabel")
-local ButtonContainer = Instance.new("ScrollingFrame")
-local UIGridLayout = Instance.new("UIGridLayout")
-local UICornerMain = Instance.new("UICorner")
-
-MobileUI.Name = "MobileFloatingTab_AC"
-MobileUI.Parent = CoreGui
-MobileUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-MainFrame.Name = "MainFrame"
-MainFrame.Parent = MobileUI
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-MainFrame.Position = UDim2.new(0.1, 0, 0.3, 0)
-MainFrame.Size = UDim2.new(0, 180, 0, 200)
-MainFrame.Active = true
-MainFrame.BorderSizePixel = 0
-
-UICornerMain.CornerRadius = UDim.new(0, 12)
-UICornerMain.Parent = MainFrame
-
-TabTitle.Name = "TabTitle"
-TabTitle.Parent = MainFrame
-TabTitle.BackgroundTransparency = 1
-TabTitle.Size = UDim2.new(1, 0, 0, 35)
-TabTitle.Font = Enum.Font.SourceSansBold
-TabTitle.Text = "QUICK TOGGLES"
-TabTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-TabTitle.TextSize = 15
-
-ButtonContainer.Name = "ButtonContainer"
-ButtonContainer.Parent = MainFrame
-ButtonContainer.BackgroundTransparency = 1
-ButtonContainer.Position = UDim2.new(0, 10, 0, 40)
-ButtonContainer.Size = UDim2.new(1, -20, 1, -50)
-ButtonContainer.CanvasSize = UDim2.new(0, 0, 0, 260)
-ButtonContainer.ScrollBarThickness = 2
-
-UIGridLayout.Parent = ButtonContainer
-UIGridLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIGridLayout.CellPadding = UDim2.new(0, 0, 0, 8)
-UIGridLayout.CellSize = UDim2.new(1, 0, 0, 36)
-
-local dragging, dragInput, dragStart, startPos
-MainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then dragging = false end
-        end)
-    end
-end)
-MainFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
-end)
-RunService.RenderStepped:Connect(function()
-    if dragging and dragInput then
-        local delta = dragInput.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
-local function CreateQuickToggle(name, configKey)
-    local btn = Instance.new("TextButton")
-    local corner = Instance.new("UICorner")
-    local stroke = Instance.new("UIStroke")
-    
-    btn.Parent = ButtonContainer
-    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.Text = name .. ": OFF"
-    btn.TextColor3 = Color3.fromRGB(240, 70, 70)
-    btn.TextSize = 13
-    btn.BorderSizePixel = 0
-    
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = btn
-    
-    stroke.Thickness = 1
-    stroke.Color = Color3.fromRGB(240, 70, 70)
-    stroke.Parent = btn
-
-    btn.MouseButton1Click:Connect(function()
-        Options[configKey] = not Options[configKey]
-        if Options[configKey] then
-            btn.Text = name .. ": ON"
-            btn.TextColor3 = Color3.fromRGB(70, 240, 70)
-            stroke.Color = Color3.fromRGB(70, 240, 70)
-        else
-            btn.Text = name .. ": OFF"
-            btn.TextColor3 = Color3.fromRGB(240, 70, 70)
-            stroke.Color = Color3.fromRGB(240, 70, 70)
-        end
-    end)
-end
-
-CreateQuickToggle("Instant Head Lock", "Aimbot")
-CreateQuickToggle("Master ESP Engine", "EspMaster")
-CreateQuickToggle("Skeleton Vector ESP", "EspSkeleton")
-CreateQuickToggle("Flight Hack Engine", "Fly")
-
--- ==========================================
 -- MAIN INTERFACE TABS (RAYFIELD)
 -- ==========================================
 local CombatTab = Window:CreateTab("Combat", nil)
 CombatTab:CreateToggle({ Name = "Instant Head Lock (No-Scope)", CurrentValue = false, Callback = function(v) Options.Aimbot = v end })
 CombatTab:CreateToggle({ Name = "Display FOV Target Field", CurrentValue = false, Callback = function(v) Options.FOVCircle = v end })
 CombatTab:CreateSlider({ Name = "FOV Size (Pixels)", Range = {50, 1000}, Increment = 10, CurrentValue = 150, Callback = function(v) Options.FOVRadius = v end })
--- Range configuration modified to metric standard meters
 CombatTab:CreateSlider({ Name = "Max Aim Range (Meters)", Range = {5, 100}, Increment = 1, CurrentValue = 100, Callback = function(v) Options.MaxAimRangeMeters = v end })
 
 local VisualsTab = Window:CreateTab("Visuals", nil)
@@ -267,8 +170,13 @@ RunService.RenderStepped:Connect(function()
     if Options.Aimbot then
         local target = GetClosestPlayer()
         if target and target.Character and target.Character:FindFirstChild("Head") then
+            -- Set perspective locking cleanly avoiding tracking degradation anomalies
             Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character.Head.Position)
+        else
+            CurrentActiveTarget = nil
         end
+    else
+        CurrentActiveTarget = nil
     end
 
     -- Movement Physics Processing
@@ -320,7 +228,6 @@ RunService.RenderStepped:Connect(function()
                     local boxSize = Vector2.new(boxHeight * 0.60, boxHeight)
                     local boxPos = Vector2.new(topPos.X - boxSize.X / 2, topPos.Y)
                     
-                    -- Convert distance track output calculation into meters
                     local distanceValueStuds = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and (rootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 0
                     local distanceValueMeters = math.floor(distanceValueStuds / STUDS_PER_METER)
 
