@@ -1,19 +1,18 @@
 --[[
-    Kanha UI — Full Executor Script
-    Drawing API + RenderStepped loop
-    Silent Aim: GU.GetEntitiesFromRaycast hook + UseItem.FireServer hook
+    Kanha UI — Rayfield Edition
+    Silent Aim: GU.GetEntitiesFromRaycast + UseItem.FireServer hooks
     Tested on: Synapse X / KRNL / Fluxus
 --]]
 
 -- ============================================================
 --  SERVICES
 -- ============================================================
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local UserInputService  = game:GetService("UserInputService")
 local CollectionService = game:GetService("CollectionService")
-local Workspace        = game:GetService("Workspace")
-local Camera           = Workspace.CurrentCamera
+local Workspace         = game:GetService("Workspace")
+local Camera            = Workspace.CurrentCamera
 
 local LP   = Players.LocalPlayer
 local reps = game:GetService("ReplicatedStorage")
@@ -21,58 +20,57 @@ local reps = game:GetService("ReplicatedStorage")
 -- ============================================================
 --  GAME MODULE REQUIRES
 -- ============================================================
-local U   = require(reps.Modules.Utility)
-local EL  = require(reps.Modules.EnumLibrary)
-local GU  = require(reps.Modules.GameplayUtility)
+local U  = require(reps.Modules.Utility)
+local EL = require(reps.Modules.EnumLibrary)
+local GU = require(reps.Modules.GameplayUtility)
 
--- Patch IsFullyAiming so the gun always fires as if fully aimed
 local _ok, gun = pcall(require, LP.PlayerScripts.Modules.ItemTypes.Gun)
 if _ok and gun and gun.IsFullyAiming then
     gun.IsFullyAiming = function() return true end
 end
 
 -- ============================================================
---  SETTINGS  (mirrors every toggle / slider / combo in the UI)
+--  SETTINGS  (written to by Rayfield callbacks)
 -- ============================================================
 local S = {
-    -- Main tab
+    -- Main
     Aimbot          = false,
     AimSilent       = false,
-    HitPart         = "Head",       -- part name searched recursively on each entity
+    HitPart         = "Head",
     FovCircle       = false,
-    FovSize         = 90,           -- screen-space radius used by both aimbot + silent aim
+    FovSize         = 90,
     TeamCheck       = false,
     WallCheck       = false,
-    TeamCheckType   = "Enemy Only", -- "Team Color" | "Enemy Only" | "Same Team" | "All"
+    TeamCheckType   = "Enemy Only",
 
-    -- Visual tab
+    -- Visual
     EnableESP        = true,
     ESPTeamCheck     = false,
     ESPTeamCheckType = "Enemy Only",
 
     ESPLine          = false,
-    ESPLinePos       = "Bottom",    -- "Top" | "Bottom" | "Side" | "Center"
+    ESPLinePos       = "Bottom",
     ESPLineColor     = Color3.fromRGB(239, 68, 68),
 
     ESPBox           = false,
-    ESPBoxType       = "2D",        -- "2D+Filled" | "Corner" | "2D"
+    ESPBoxType       = "2D",
     ESPBoxColor      = Color3.fromRGB(59, 130, 246),
 
     ESPHealth        = false,
-    ESPHealthPos     = "Left",      -- "Left" | "Right" | "Top" | "Bottom"
+    ESPHealthPos     = "Left",
     ESPHealthColor   = Color3.fromRGB(34, 197, 94),
 
     ESPName          = false,
-    ESPNamePos       = "Top",       -- "Top" | "Bottom"
+    ESPNamePos       = "Top",
     ESPNameColor     = Color3.fromRGB(245, 245, 245),
 
     ESPDistance      = false,
-    ESPDistancePos   = "Bottom",    -- "Top" | "Bottom"
+    ESPDistancePos   = "Bottom",
     ESPDistanceColor = Color3.fromRGB(251, 191, 36),
 
     ESPSkeleton      = false,
 
-    -- Extra tab
+    -- Extra
     Fly             = false,
     FlySpeed        = 50,
     SpeedVelocity   = false,
@@ -83,6 +81,340 @@ local S = {
     InfHealth       = false,
     AutoKill        = false,
 }
+
+-- ============================================================
+--  LOAD RAYFIELD
+-- ============================================================
+local Rayfield = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua"
+))()
+
+local Window = Rayfield:CreateWindow({
+    Name             = "Kanha UI",
+    LoadingTitle     = "Kanha UI",
+    LoadingSubtitle  = "cracked by rony",
+    Theme            = "Default",
+    DisableBuildWarnings = true,
+    ConfigurationSaving = {
+        Enabled  = false,
+        FileName = "KanhaUI",
+    },
+})
+
+-- ============================================================
+--  MAIN TAB
+-- ============================================================
+local MainTab = Window:CreateTab("Main", "crosshair")
+
+MainTab:CreateSection("Aimbot")
+
+MainTab:CreateToggle({
+    Name         = "Aimbot",
+    CurrentValue = S.Aimbot,
+    Flag         = "Aimbot",
+    Callback     = function(v) S.Aimbot = v end,
+})
+
+MainTab:CreateToggle({
+    Name         = "Aim Silent",
+    CurrentValue = S.AimSilent,
+    Flag         = "AimSilent",
+    Callback     = function(v) S.AimSilent = v end,
+})
+
+MainTab:CreateDivider()
+
+MainTab:CreateToggle({
+    Name         = "Fov Circle",
+    CurrentValue = S.FovCircle,
+    Flag         = "FovCircle",
+    Callback     = function(v) S.FovCircle = v end,
+})
+
+MainTab:CreateSlider({
+    Name         = "Fov Size",
+    Range        = {1, 360},
+    Increment    = 1,
+    CurrentValue = S.FovSize,
+    Flag         = "FovSize",
+    Callback     = function(v) S.FovSize = v end,
+})
+
+MainTab:CreateDivider()
+
+MainTab:CreateToggle({
+    Name         = "Team Check",
+    CurrentValue = S.TeamCheck,
+    Flag         = "TeamCheck",
+    Callback     = function(v) S.TeamCheck = v end,
+})
+
+MainTab:CreateDropdown({
+    Name          = "Team Check Type",
+    Options       = {"Enemy Only", "Same Team", "Team Color", "All"},
+    CurrentOption = S.TeamCheckType,
+    Flag          = "TeamCheckType",
+    Callback      = function(v) S.TeamCheckType = v end,
+})
+
+MainTab:CreateDivider()
+
+MainTab:CreateToggle({
+    Name         = "Wall Check",
+    CurrentValue = S.WallCheck,
+    Flag         = "WallCheck",
+    Callback     = function(v) S.WallCheck = v end,
+})
+
+-- ============================================================
+--  VISUAL TAB
+-- ============================================================
+local VisualTab = Window:CreateTab("Visual", "eye")
+
+VisualTab:CreateSection("ESP")
+
+VisualTab:CreateToggle({
+    Name         = "Enable ESP",
+    CurrentValue = S.EnableESP,
+    Flag         = "EnableESP",
+    Callback     = function(v) S.EnableESP = v end,
+})
+
+VisualTab:CreateToggle({
+    Name         = "Team Check",
+    CurrentValue = S.ESPTeamCheck,
+    Flag         = "ESPTeamCheck",
+    Callback     = function(v) S.ESPTeamCheck = v end,
+})
+
+VisualTab:CreateDropdown({
+    Name          = "Team Check Type",
+    Options       = {"Team Color", "Enemy Only", "Same Team", "All"},
+    CurrentOption = S.ESPTeamCheckType,
+    Flag          = "ESPTeamCheckType",
+    Callback      = function(v) S.ESPTeamCheckType = v end,
+})
+
+VisualTab:CreateDivider()
+
+-- ESP Line
+VisualTab:CreateSection("Tracer")
+
+VisualTab:CreateToggle({
+    Name         = "ESP Line",
+    CurrentValue = S.ESPLine,
+    Flag         = "ESPLine",
+    Callback     = function(v) S.ESPLine = v end,
+})
+
+VisualTab:CreateDropdown({
+    Name          = "ESP Line Position",
+    Options       = {"Top", "Bottom", "Side", "Center"},
+    CurrentOption = S.ESPLinePos,
+    Flag          = "ESPLinePos",
+    Callback      = function(v) S.ESPLinePos = v end,
+})
+
+VisualTab:CreateColorPicker({
+    Name     = "ESP Line Color",
+    Color    = S.ESPLineColor,
+    Flag     = "ESPLineColor",
+    Callback = function(v) S.ESPLineColor = v end,
+})
+
+-- ESP Box
+VisualTab:CreateSection("Box")
+
+VisualTab:CreateToggle({
+    Name         = "ESP Box",
+    CurrentValue = S.ESPBox,
+    Flag         = "ESPBox",
+    Callback     = function(v) S.ESPBox = v end,
+})
+
+VisualTab:CreateDropdown({
+    Name          = "ESP Box Type",
+    Options       = {"2D", "Corner", "2D+Filled"},
+    CurrentOption = S.ESPBoxType,
+    Flag          = "ESPBoxType",
+    Callback      = function(v) S.ESPBoxType = v end,
+})
+
+VisualTab:CreateColorPicker({
+    Name     = "ESP Box Color",
+    Color    = S.ESPBoxColor,
+    Flag     = "ESPBoxColor",
+    Callback = function(v) S.ESPBoxColor = v end,
+})
+
+-- ESP Health
+VisualTab:CreateSection("Health")
+
+VisualTab:CreateToggle({
+    Name         = "ESP Health",
+    CurrentValue = S.ESPHealth,
+    Flag         = "ESPHealth",
+    Callback     = function(v) S.ESPHealth = v end,
+})
+
+VisualTab:CreateDropdown({
+    Name          = "Health Position",
+    Options       = {"Left", "Right", "Top", "Bottom"},
+    CurrentOption = S.ESPHealthPos,
+    Flag          = "ESPHealthPos",
+    Callback      = function(v) S.ESPHealthPos = v end,
+})
+
+VisualTab:CreateColorPicker({
+    Name     = "ESP Health Color",
+    Color    = S.ESPHealthColor,
+    Flag     = "ESPHealthColor",
+    Callback = function(v) S.ESPHealthColor = v end,
+})
+
+-- ESP Name
+VisualTab:CreateSection("Name")
+
+VisualTab:CreateToggle({
+    Name         = "ESP Name",
+    CurrentValue = S.ESPName,
+    Flag         = "ESPName",
+    Callback     = function(v) S.ESPName = v end,
+})
+
+VisualTab:CreateDropdown({
+    Name          = "Name Position",
+    Options       = {"Top", "Bottom"},
+    CurrentOption = S.ESPNamePos,
+    Flag          = "ESPNamePos",
+    Callback      = function(v) S.ESPNamePos = v end,
+})
+
+VisualTab:CreateColorPicker({
+    Name     = "ESP Name Color",
+    Color    = S.ESPNameColor,
+    Flag     = "ESPNameColor",
+    Callback = function(v) S.ESPNameColor = v end,
+})
+
+-- ESP Distance
+VisualTab:CreateSection("Distance")
+
+VisualTab:CreateToggle({
+    Name         = "ESP Distance",
+    CurrentValue = S.ESPDistance,
+    Flag         = "ESPDistance",
+    Callback     = function(v) S.ESPDistance = v end,
+})
+
+VisualTab:CreateDropdown({
+    Name          = "Distance Position",
+    Options       = {"Top", "Bottom"},
+    CurrentOption = S.ESPDistancePos,
+    Flag          = "ESPDistancePos",
+    Callback      = function(v) S.ESPDistancePos = v end,
+})
+
+VisualTab:CreateColorPicker({
+    Name     = "ESP Distance Color",
+    Color    = S.ESPDistanceColor,
+    Flag     = "ESPDistanceColor",
+    Callback = function(v) S.ESPDistanceColor = v end,
+})
+
+-- ESP Skeleton
+VisualTab:CreateSection("Skeleton")
+
+VisualTab:CreateToggle({
+    Name         = "ESP Skeleton",
+    CurrentValue = S.ESPSkeleton,
+    Flag         = "ESPSkeleton",
+    Callback     = function(v) S.ESPSkeleton = v end,
+})
+
+-- ============================================================
+--  EXTRA TAB
+-- ============================================================
+local ExtraTab = Window:CreateTab("Extra", "zap")
+
+ExtraTab:CreateSection("Movement")
+
+ExtraTab:CreateToggle({
+    Name         = "Fly",
+    CurrentValue = S.Fly,
+    Flag         = "Fly",
+    Callback     = function(v)
+        S.Fly = v
+        if not v then SetFly(false) end
+    end,
+})
+
+ExtraTab:CreateSlider({
+    Name         = "Fly Speed",
+    Range        = {1, 200},
+    Increment    = 1,
+    CurrentValue = S.FlySpeed,
+    Flag         = "FlySpeed",
+    Callback     = function(v) S.FlySpeed = v end,
+})
+
+ExtraTab:CreateDivider()
+
+ExtraTab:CreateToggle({
+    Name         = "Speed Velocity",
+    CurrentValue = S.SpeedVelocity,
+    Flag         = "SpeedVelocity",
+    Callback     = function(v) S.SpeedVelocity = v end,
+})
+
+ExtraTab:CreateSlider({
+    Name         = "Velocity",
+    Range        = {1, 100},
+    Increment    = 1,
+    CurrentValue = S.Velocity,
+    Flag         = "Velocity",
+    Callback     = function(v) S.Velocity = v end,
+})
+
+ExtraTab:CreateSection("Teleport")
+
+ExtraTab:CreateToggle({
+    Name         = "TP Nearest Player",
+    CurrentValue = S.TPNearestPlayer,
+    Flag         = "TPNearestPlayer",
+    Callback     = function(v) S.TPNearestPlayer = v end,
+})
+
+ExtraTab:CreateDropdown({
+    Name          = "TP Team Check",
+    Options       = {"Enemy Only", "Same Team", "Team Color", "All"},
+    CurrentOption = S.TPTeamCheck,
+    Flag          = "TPTeamCheck",
+    Callback      = function(v) S.TPTeamCheck = v end,
+})
+
+ExtraTab:CreateSection("Misc")
+
+ExtraTab:CreateToggle({
+    Name         = "Auto Heal",
+    CurrentValue = S.AutoHeal,
+    Flag         = "AutoHeal",
+    Callback     = function(v) S.AutoHeal = v end,
+})
+
+ExtraTab:CreateToggle({
+    Name         = "Inf Health",
+    CurrentValue = S.InfHealth,
+    Flag         = "InfHealth",
+    Callback     = function(v) S.InfHealth = v end,
+})
+
+ExtraTab:CreateToggle({
+    Name         = "Auto Kill",
+    CurrentValue = S.AutoKill,
+    Flag         = "AutoKill",
+    Callback     = function(v) S.AutoKill = v end,
+})
 
 -- ============================================================
 --  UTILITIES
@@ -133,41 +465,28 @@ end
 
 -- ============================================================
 --  TARGET ACQUISITION
---  Uses CollectionService "Entity" tags — matches the game's
---  own entity system. Falls back to player FOV check for aimbot.
 -- ============================================================
-
--- Silent-aim target: searches CollectionService-tagged entities
 local function target()
     local center = Camera.ViewportSize / 2
     local bestPart, bestDist = nil, S.FovSize
 
     for _, entity in CollectionService:GetTagged("Entity") do
         if entity == LP.Character then continue end
-
-        -- Optional team check against entity's owning player
         if S.TeamCheck then
             local p = Players:GetPlayerFromCharacter(entity)
             if p and not PassesTeamFilter(p, S.TeamCheckType) then continue end
         end
-
         local part = entity:FindFirstChild(S.HitPart, true)
         if not part or not part:IsA("BasePart") then continue end
-
         local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
         if not onScreen then continue end
-
         local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-        if d < bestDist then
-            bestDist = d
-            bestPart = part
-        end
+        if d < bestDist then bestDist = d; bestPart = part end
     end
 
     return bestPart
 end
 
--- Hard-aimbot target: searches Players (camera lock-on)
 local function GetClosestPlayer()
     local center = Vector2.new(Camera.ViewportSize.X * 0.5, Camera.ViewportSize.Y * 0.5)
     local best, bestDist = nil, S.FovSize
@@ -189,9 +508,7 @@ local function GetClosestPlayer()
 end
 
 -- ============================================================
---  CFD — builds the encoded camera-data table the server expects
---  origin  : Vector3  (local HumanoidRootPart position)
---  part    : BasePart (target hit part)
+--  CFD
 -- ============================================================
 local function CFD(origin, part)
     local cf = part.CFrame
@@ -206,7 +523,7 @@ local function CFD(origin, part)
 end
 
 -- ============================================================
---  DRAWING OBJECTS PER PLAYER
+--  DRAWING OBJECTS
 -- ============================================================
 local SKEL_PAIRS = {
     {"Head","UpperTorso"},
@@ -219,16 +536,16 @@ local SKEL_PAIRS = {
 
 local DB = {}
 
-local function NewLine(thickness, color)
+local function NewLine(t, c)
     local l = Drawing.new("Line")
-    l.Visible = false; l.Thickness = thickness; l.Color = color
+    l.Visible = false; l.Thickness = t; l.Color = c
     return l
 end
 
-local function NewSquare(filled, transparency)
+local function NewSquare(filled, tr)
     local s = Drawing.new("Square")
     s.Visible = false; s.Filled = filled or false
-    if transparency then s.Transparency = transparency end
+    if tr then s.Transparency = tr end
     return s
 end
 
@@ -273,10 +590,9 @@ for _, p in ipairs(Players:GetPlayers()) do AddPlayer(p) end
 Players.PlayerAdded:Connect(function(p) task.wait(1); AddPlayer(p) end)
 Players.PlayerRemoving:Connect(RemovePlayer)
 
-local function DrawCornerBox(d, box, col, pct)
-    pct = pct or 0.22
+local function DrawCornerBox(d, box, col)
     local x, y, w, h = box.x, box.y, box.w, box.h
-    local lx, ly = w * pct, h * pct
+    local lx, ly = w * 0.22, h * 0.22
     local corners = {
         { Vector2.new(x,   y),   Vector2.new(x+lx, y),    Vector2.new(x,   y+ly)   },
         { Vector2.new(x+w, y),   Vector2.new(x+w-lx, y),  Vector2.new(x+w, y+ly)   },
@@ -285,10 +601,8 @@ local function DrawCornerBox(d, box, col, pct)
     }
     local i = 1
     for _, c in ipairs(corners) do
-        d.CornerLines[i].From = c[1]; d.CornerLines[i].To = c[2]
-        d.CornerLines[i].Color = col; d.CornerLines[i].Visible = true; i += 1
-        d.CornerLines[i].From = c[1]; d.CornerLines[i].To = c[3]
-        d.CornerLines[i].Color = col; d.CornerLines[i].Visible = true; i += 1
+        d.CornerLines[i].From = c[1]; d.CornerLines[i].To = c[2]; d.CornerLines[i].Color = col; d.CornerLines[i].Visible = true; i+=1
+        d.CornerLines[i].From = c[1]; d.CornerLines[i].To = c[3]; d.CornerLines[i].Color = col; d.CornerLines[i].Visible = true; i+=1
     end
 end
 
@@ -308,44 +622,28 @@ FovCircle.Filled       = false
 FovCircle.Transparency = 1
 
 -- ============================================================
---  SILENT AIM — two-layer hook
---
---  Layer 1: GU.GetEntitiesFromRaycast
---    Intercepts the server-bound raycast, bends the direction
---    toward the target part and extends maxDist if needed.
---
---  Layer 2: UseItem.FireServer
---    Replaces camdata with CFD() encoding so the server
---    believes the client's camera was aimed at the target.
---
---  Both layers are gated on S.AimSilent and are independent —
---  either alone gives partial effect; together they are complete.
+--  SILENT AIM HOOKS
 -- ============================================================
-
--- Layer 1: Raycast direction bend
 local _GetEntitiesFromRaycast = GU.GetEntitiesFromRaycast
 GU.GetEntitiesFromRaycast = function(self, envID, params, origin, dir, maxDist, ...)
     if S.AimSilent then
         local t = target()
         if t then
             local dist = (t.Position - origin).Magnitude
-            dir        = (t.Position - origin).Unit
+            dir = (t.Position - origin).Unit
             if dist > maxDist then maxDist = dist + 5 end
         end
     end
     return _GetEntitiesFromRaycast(self, envID, params, origin, dir, maxDist, ...)
 end
 
--- Layer 2: Camera-data override on FireServer
 local UseItem = reps.Remotes.Replication.Fighter.UseItem
 local _UseItemFS
 _UseItemFS = hookfunction(UseItem.FireServer, newcclosure(function(self, objID, enumVal, camdata, extra)
     if S.AimSilent and enumVal == EL:ToEnum("StartShooting") then
         local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         local t    = target()
-        if root and t then
-            camdata = CFD(root.Position, t)
-        end
+        if root and t then camdata = CFD(root.Position, t) end
     end
     return _UseItemFS(self, objID, enumVal, camdata, extra)
 end))
@@ -354,7 +652,7 @@ end))
 --  FLY
 -- ============================================================
 local flyConn
-local function SetFly(on)
+function SetFly(on)
     if flyConn then flyConn:Disconnect(); flyConn = nil end
     local char = LP.Character; if not char then return end
     local hrp  = char:FindFirstChild("HumanoidRootPart")
@@ -381,7 +679,7 @@ local function SetFly(on)
 end
 
 -- ============================================================
---  SPEED
+--  SPEED / HEALTH LOOPS
 -- ============================================================
 RunService.Heartbeat:Connect(function()
     if not S.SpeedVelocity then return end
@@ -390,9 +688,6 @@ RunService.Heartbeat:Connect(function()
     if hum then hum.WalkSpeed = S.Velocity end
 end)
 
--- ============================================================
---  INF HEALTH + AUTO HEAL
--- ============================================================
 RunService.Heartbeat:Connect(function()
     local char = LP.Character; if not char then return end
     local hum  = char:FindFirstChild("Humanoid"); if not hum then return end
@@ -404,7 +699,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================================
---  TP NEAREST PLAYER
+--  TP NEAREST
 -- ============================================================
 local tpCd = 0
 local function TPNearest()
@@ -434,12 +729,10 @@ RunService.RenderStepped:Connect(function()
     local vp     = Camera.ViewportSize
     local center = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
 
-    -- FOV circle
     FovCircle.Visible  = S.FovCircle
     FovCircle.Radius   = S.FovSize
     FovCircle.Position = center
 
-    -- Hard aimbot (camera lock, only when AimSilent is off)
     if S.Aimbot and not S.AimSilent then
         local p = GetClosestPlayer()
         if p and p.Character then
@@ -463,9 +756,7 @@ RunService.RenderStepped:Connect(function()
 
     if S.Fly and not flyConn then SetFly(true) end
 
-    -- ============================================================
-    --  ESP LOOP
-    -- ============================================================
+    -- ESP
     for _, player in ipairs(Players:GetPlayers()) do
         if player == LP then continue end
         local d = DB[player]; if not d then continue end
@@ -483,128 +774,87 @@ RunService.RenderStepped:Connect(function()
         if show then show = box ~= nil and PassesWallCheck(char) end
 
         local teamCol = GetTeamColor(player)
-        local function ResolveColor(base)
+        local function RC(base)
             return (S.ESPTeamCheck and S.ESPTeamCheckType == "Team Color") and teamCol or base
         end
 
         -- BOX
         if show and S.ESPBox then
-            local col   = ResolveColor(S.ESPBoxColor)
-            local btype = S.ESPBoxType
-            HideCornerBox(d)
-            if btype == "Corner" then
+            local col = RC(S.ESPBoxColor); HideCornerBox(d)
+            if S.ESPBoxType == "Corner" then
                 d.Box.Visible = false; d.BoxFill.Visible = false
                 DrawCornerBox(d, box, col)
-            elseif btype == "2D+Filled" then
-                d.Box.Visible = true; d.Box.Position = Vector2.new(box.x, box.y)
-                d.Box.Size = Vector2.new(box.w, box.h); d.Box.Color = col; d.Box.Thickness = 1
-                d.BoxFill.Visible = true; d.BoxFill.Position = Vector2.new(box.x, box.y)
-                d.BoxFill.Size = Vector2.new(box.w, box.h); d.BoxFill.Color = col
+            elseif S.ESPBoxType == "2D+Filled" then
+                d.Box.Visible = true; d.Box.Position = Vector2.new(box.x,box.y); d.Box.Size = Vector2.new(box.w,box.h); d.Box.Color = col; d.Box.Thickness = 1
+                d.BoxFill.Visible = true; d.BoxFill.Position = Vector2.new(box.x,box.y); d.BoxFill.Size = Vector2.new(box.w,box.h); d.BoxFill.Color = col
             else
-                d.Box.Visible = true; d.Box.Position = Vector2.new(box.x, box.y)
-                d.Box.Size = Vector2.new(box.w, box.h); d.Box.Color = col; d.Box.Thickness = 1
+                d.Box.Visible = true; d.Box.Position = Vector2.new(box.x,box.y); d.Box.Size = Vector2.new(box.w,box.h); d.Box.Color = col; d.Box.Thickness = 1
                 d.BoxFill.Visible = false
             end
-        else
-            d.Box.Visible = false; d.BoxFill.Visible = false; HideCornerBox(d)
-        end
+        else d.Box.Visible = false; d.BoxFill.Visible = false; HideCornerBox(d) end
 
         -- NAME
         if show and S.ESPName then
-            d.Name.Visible  = true; d.Name.Text  = player.Name
-            d.Name.Color    = ResolveColor(S.ESPNameColor)
-            d.Name.Position = S.ESPNamePos == "Top"
-                and Vector2.new(box.cx, box.y - 15)
-                or  Vector2.new(box.cx, box.y + box.h + 2)
+            d.Name.Visible = true; d.Name.Text = player.Name; d.Name.Color = RC(S.ESPNameColor)
+            d.Name.Position = S.ESPNamePos == "Top" and Vector2.new(box.cx, box.y-15) or Vector2.new(box.cx, box.y+box.h+2)
         else d.Name.Visible = false end
 
         -- DISTANCE
         if show and S.ESPDistance then
             local dist = math.floor((hrp.Position - Camera.CFrame.Position).Magnitude)
-            d.Distance.Visible  = true; d.Distance.Text  = dist .. " m"
-            d.Distance.Color    = ResolveColor(S.ESPDistanceColor)
+            d.Distance.Visible = true; d.Distance.Text = dist.." m"; d.Distance.Color = RC(S.ESPDistanceColor)
             d.Distance.Position = S.ESPDistancePos == "Top"
-                and Vector2.new(box.cx, box.y  - (S.ESPName and 27 or 15))
-                or  Vector2.new(box.cx, box.y  + box.h + (S.ESPName and 14 or 2))
+                and Vector2.new(box.cx, box.y - (S.ESPName and 27 or 15))
+                or  Vector2.new(box.cx, box.y + box.h + (S.ESPName and 14 or 2))
         else d.Distance.Visible = false end
 
-        -- HEALTH BAR
+        -- HEALTH
         if show and S.ESPHealth and hum then
-            local ratio  = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-            local col    = ResolveColor(S.ESPHealthColor)
-            local pos    = S.ESPHealthPos
+            local ratio = math.clamp(hum.Health/hum.MaxHealth, 0, 1)
+            local col = RC(S.ESPHealthColor); local pos = S.ESPHealthPos
             local isVert = (pos == "Left" or pos == "Right")
             local bw, bh, bx, by
             if isVert then
-                bw = 4; bh = box.h
-                bx = (pos == "Left") and (box.x - 6) or (box.x + box.w + 2); by = box.y
+                bw=4; bh=box.h; bx=(pos=="Left") and (box.x-6) or (box.x+box.w+2); by=box.y
             else
-                bw = box.w; bh = 4; bx = box.x
-                by = (pos == "Top") and (box.y - 6) or (box.y + box.h + 2)
+                bw=box.w; bh=4; bx=box.x; by=(pos=="Top") and (box.y-6) or (box.y+box.h+2)
             end
-            d.HealthBG.Visible  = true
-            d.HealthBG.Position = Vector2.new(bx, by)
-            d.HealthBG.Size     = Vector2.new(bw, bh)
-            d.HealthFill.Visible = true; d.HealthFill.Color = col
+            d.HealthBG.Visible=true; d.HealthBG.Position=Vector2.new(bx,by); d.HealthBG.Size=Vector2.new(bw,bh)
+            d.HealthFill.Visible=true; d.HealthFill.Color=col
             if isVert then
-                local fh = bh * ratio
-                d.HealthFill.Position = Vector2.new(bx, by + bh - fh)
-                d.HealthFill.Size     = Vector2.new(bw, fh)
+                local fh=bh*ratio; d.HealthFill.Position=Vector2.new(bx,by+bh-fh); d.HealthFill.Size=Vector2.new(bw,fh)
             else
-                d.HealthFill.Position = Vector2.new(bx, by)
-                d.HealthFill.Size     = Vector2.new(bw * ratio, bh)
+                d.HealthFill.Position=Vector2.new(bx,by); d.HealthFill.Size=Vector2.new(bw*ratio,bh)
             end
-        else
-            d.HealthBG.Visible = false; d.HealthFill.Visible = false
-        end
+        else d.HealthBG.Visible=false; d.HealthFill.Visible=false end
 
-        -- TRACER LINE
+        -- LINE
         if show and S.ESPLine then
-            d.Line.Visible = true; d.Line.Color = ResolveColor(S.ESPLineColor)
-            local lp = S.ESPLinePos
-            d.Line.From = lp == "Top"    and Vector2.new(center.X, 0)
-                       or lp == "Bottom" and Vector2.new(center.X, vp.Y)
-                       or lp == "Side"   and Vector2.new(0, center.Y)
-                       or center
+            d.Line.Visible=true; d.Line.Color=RC(S.ESPLineColor)
+            local lp=S.ESPLinePos
+            d.Line.From = lp=="Top" and Vector2.new(center.X,0) or lp=="Bottom" and Vector2.new(center.X,vp.Y) or lp=="Side" and Vector2.new(0,center.Y) or center
             d.Line.To = Vector2.new(box.cx, box.cy)
-        else d.Line.Visible = false end
+        else d.Line.Visible=false end
 
         -- SKELETON
         if show and S.ESPSkeleton then
             for _, sk in ipairs(d.Skeleton) do
-                local pa = char:FindFirstChild(sk.a)
-                local pb = char:FindFirstChild(sk.b)
+                local pa=char:FindFirstChild(sk.a); local pb=char:FindFirstChild(sk.b)
                 if pa and pb then
-                    local sa, da, oa = W2S(pa.Position)
-                    local sb, db, ob = W2S(pb.Position)
-                    if oa and ob and da > 0 and db > 0 then
-                        sk.line.Visible = true; sk.line.From = sa; sk.line.To = sb
-                        sk.line.Color = (S.ESPTeamCheck and S.ESPTeamCheckType == "Team Color")
-                            and teamCol or Color3.fromRGB(255, 255, 255)
-                    else sk.line.Visible = false end
-                else sk.line.Visible = false end
+                    local sa,da,oa=W2S(pa.Position); local sb,db,ob=W2S(pb.Position)
+                    if oa and ob and da>0 and db>0 then
+                        sk.line.Visible=true; sk.line.From=sa; sk.line.To=sb
+                        sk.line.Color=(S.ESPTeamCheck and S.ESPTeamCheckType=="Team Color") and teamCol or Color3.fromRGB(255,255,255)
+                    else sk.line.Visible=false end
+                else sk.line.Visible=false end
             end
-        else
-            for _, sk in ipairs(d.Skeleton) do sk.line.Visible = false end
-        end
+        else for _,sk in ipairs(d.Skeleton) do sk.line.Visible=false end end
     end
 end)
 
--- ============================================================
---  KEYBINDS
--- ============================================================
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == Enum.KeyCode.Delete then
-        S.EnableESP = not S.EnableESP
-    elseif input.KeyCode == Enum.KeyCode.F then
-        S.Fly = not S.Fly
-        if not S.Fly then SetFly(false) end
-    elseif input.KeyCode == Enum.KeyCode.G then
-        S.Aimbot = not S.Aimbot
-    elseif input.KeyCode == Enum.KeyCode.H then
-        S.AimSilent = not S.AimSilent
-    end
-end)
-
-print("[Kanha UI] Loaded.")
+Rayfield:Notify({
+    Title   = "Kanha UI",
+    Content = "Loaded. K to toggle UI.",
+    Duration = 4,
+    Image   = "check",
+})
